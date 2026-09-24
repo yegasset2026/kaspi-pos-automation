@@ -55,10 +55,10 @@ describe('signedQrPayHeaders', () => {
   });
 });
 
-describe('APP defaults — согласованный набор апстрима 28c9167', () => {
+describe('APP defaults — версия 26.0921 (Kaspi отсёк 4.112.1 25.09.2026)', () => {
   it('iPhone 15 Pro Max / iOS 18.4', { skip: !!process.env.APP_VERSION || !!process.env.APP_MODEL }, () => {
-    assert.equal(APP.version, '4.112.1');
-    assert.equal(APP.build, '1107');
+    assert.equal(APP.version, '26.0921');
+    assert.equal(APP.build, '2609210');
     assert.equal(APP.model, 'iPhone16,2');
     assert.equal(APP.platformVer, '18.4');
     assert.equal(APP.screenW, '430.0');

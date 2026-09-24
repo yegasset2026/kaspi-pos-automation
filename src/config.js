@@ -81,9 +81,11 @@ export const KASPI_QRPAY_URL = 'https://qrpay.kaspi.kz';
 // ⚠️ The Kaspi API validates these parameters and may reject unknown values.
 
 export const APP = {
-  // Значения апстрима tapter-dev/kaspi-pos-automation (28c9167, 2026-07-24).
-  version: process.env.APP_VERSION || '4.112.1',
-  build: process.env.APP_BUILD || '1107',
+  // Kaspi отсекает старые версии («Обновите приложение, чтобы войти»): при таком ответе
+  // смотреть текущую версию (itunes lookup id=1262997215) и подбирать сборку ГГММДДн.
+  // 26.0921/2609210 проверено 2026-09-25; апстрим 28c9167 сидел на 4.112.1/1107.
+  version: process.env.APP_VERSION || '26.0921',
+  build: process.env.APP_BUILD || '2609210',
   platform: process.env.APP_PLATFORM || 'iOS',
   platformVer: process.env.APP_PLATFORM_VER || '18.4',
   locale: process.env.APP_LOCALE || 'ru-RU',
