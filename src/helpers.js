@@ -43,17 +43,51 @@ export const extractUserToken = (resp) => {
   return null;
 };
 
+// ─── Redaction ───
+// Логи моста собираются pm2/docker/облаком, поэтому подписи и токены кассира в
+// stdout попадать не должны (carwash_crm-yrbz). Маскируем по имени ключа.
+
+const SECRET_KEY_RE =
+  /(token|secret|password|sign|signature|auth|cookie|session|vtoken|mac|key|pin|otp|code|qr)/i;
+const SAFE_KEY_RE = /^(x-request-id|x-call|x-sv|x-sh|x-locale|x-time)$/i;
+
+export const redactSecrets = (value, depth = 0) => {
+  if (value === null || value === undefined) return value;
+  if (depth > 6) return '[deep]';
+  if (Array.isArray(value)) return value.map((v) => redactSecrets(v, depth + 1));
+  if (typeof value !== 'object') return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    out[k] = !SAFE_KEY_RE.test(k) && SECRET_KEY_RE.test(k) ? '***' : redactSecrets(v, depth + 1);
+  }
+  return out;
+};
+
+/** URL без значений «секретных» query-параметров. */
+export const redactUrl = (url) => {
+  try {
+    const u = new URL(url);
+    for (const key of [...u.searchParams.keys()]) {
+      if (SECRET_KEY_RE.test(key)) u.searchParams.set(key, '***');
+    }
+    return u.toString();
+  } catch {
+    return String(url).split('?')[0];
+  }
+};
+
 // ─── Logged fetch wrapper ───
+// Печатаем метод/URL/статус и замаскированные тела; заголовки (X-Kb-TokenSn,
+// X-Kb-TokenSnMac, X-Sign, Cookie с user_token) в лог не идут вовсе.
 
 export const loggedFetch = async (url, options = {}) => {
   const method = (options.method || 'GET').toUpperCase();
-  console.log(`\n>>> ${method} ${url}`);
-  if (options.headers) console.log('>>> Headers:', JSON.stringify(options.headers, null, 2));
+  console.log(`\n>>> ${method} ${redactUrl(url)}`);
   if (options.body) {
     try {
-      console.log('>>> Body:', JSON.parse(options.body));
+      console.log('>>> Body:', JSON.stringify(redactSecrets(JSON.parse(options.body))));
     } catch {
-      console.log('>>> Body:', options.body);
+      console.log('>>> Body: [raw, not logged]');
     }
   }
 
@@ -70,7 +104,10 @@ export const loggedFetch = async (url, options = {}) => {
     }
   }
   console.log(`<<< ${resp.status} ${resp.statusText}`);
-  console.log('<<< Response:', typeof body === 'object' ? JSON.stringify(body, null, 2) : body);
+  console.log(
+    '<<< Response:',
+    typeof body === 'object' ? JSON.stringify(redactSecrets(body), null, 2) : '[text, not logged]',
+  );
   return resp;
 };
 

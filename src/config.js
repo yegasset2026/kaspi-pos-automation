@@ -81,6 +81,7 @@ export const KASPI_QRPAY_URL = 'https://qrpay.kaspi.kz';
 // ⚠️ The Kaspi API validates these parameters and may reject unknown values.
 
 export const APP = {
+  // Значения апстрима tapter-dev/kaspi-pos-automation (28c9167, 2026-07-24).
   version: process.env.APP_VERSION || '4.112.1',
   build: process.env.APP_BUILD || '1107',
   platform: process.env.APP_PLATFORM || 'iOS',
