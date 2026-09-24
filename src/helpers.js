@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fetch from 'node-fetch';
 import { DEVICE, APP, UA_NATIVE } from './config.js';
 import { computeTokenSnMac, computeXSign } from './crypto.js';
+import { GLOBAL_IDENTITY } from './identity.js';
 
 // ─── Utilities ───
 
@@ -26,8 +27,8 @@ export const nowISO = () => {
 
 // ─── Cookie builder ───
 
-export const entranceCookie = (extraUserToken) => {
-  let c = `deviceId=${DEVICE.deviceId}; installId=${DEVICE.installId}; is_mobile_app=true; locale=${APP.locale}; ma_bld=${APP.build}; ma_platform_type=${APP.platform}; ma_platform_ver=${APP.platformVer}; ma_ver=${APP.version}; pk=${DEVICE.pk}; pkTag=${DEVICE.pkTag}; xs=R:0|E:0|RH:0|N:0`;
+export const entranceCookie = (extraUserToken, device = DEVICE) => {
+  let c = `deviceId=${device.deviceId}; installId=${device.installId}; is_mobile_app=true; locale=${APP.locale}; ma_bld=${APP.build}; ma_platform_type=${APP.platform}; ma_platform_ver=${APP.platformVer}; ma_ver=${APP.version}; pk=${device.pk}; pkTag=${device.pkTag}; xs=R:0|E:0|RH:0|N:0`;
   if (extraUserToken) c += `; user_token=${extraUserToken}`;
   return c;
 };
@@ -112,16 +113,18 @@ export const loggedFetch = async (url, options = {}) => {
 };
 
 // ─── Signed QR-pay headers (session passed as parameter) ───
+// session.identity — личность кассира (src/identity.js); без неё — общая из файлов.
 
 export const signedQrPayHeaders = (url, session, body) => {
+  const device = session.identity || GLOBAL_IDENTITY;
   const xsh =
     'url,X-Install-ID,X-PI,X-App-Bld,X-Platform-Ver,X-Locale,X-App-Ver,X-Device-ID,X-SV,X-Time,X-Platform-Type,X-Call,X-Kb-TokenSnMac,X-Kb-TokenSn';
   const headers = {
     'X-Kb-TokenSn': session.tokenSN,
     'X-Kb-TokenSnMac': computeTokenSnMac(session.tokenSN, session.decryptedSecret),
     'X-PI': session.profileId != null ? String(session.profileId) : '',
-    'X-Install-ID': DEVICE.installId,
-    'X-Device-ID': DEVICE.deviceId,
+    'X-Install-ID': device.installId,
+    'X-Device-ID': device.deviceId,
     'X-App-Ver': APP.version,
     'X-App-Bld': APP.build,
     'X-Platform-Type': APP.platform,
@@ -137,6 +140,6 @@ export const signedQrPayHeaders = (url, session, body) => {
     'Accept-Language': 'ru',
     'Accept-Encoding': 'gzip, deflate, br',
   };
-  headers['X-Sign'] = computeXSign(url, headers, xsh, body);
+  headers['X-Sign'] = computeXSign(url, headers, xsh, body, device.ecPrivateKey);
   return headers;
 };

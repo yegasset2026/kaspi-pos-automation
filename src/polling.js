@@ -6,11 +6,12 @@ import { fileURLToPath } from 'url';
 import { KASPI_QRPAY_URL } from './config.js';
 import { signedQrPayHeaders } from './helpers.js';
 import { decryptSecret } from './crypto.js';
+import { openIdentity } from './identity.js';
 import { getWebhooksByEvent } from './webhookStore.js';
 import { logger } from './logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TRACKED_FILE = path.join(__dirname, '..', 'tracked-payments.json');
+const TRACKED_FILE = process.env.KASPI_TRACKED_FILE || path.join(__dirname, '..', 'tracked-payments.json');
 
 // ─── Tracked payments ───
 
@@ -45,7 +46,7 @@ const loadTracked = () => {
 
 // ─── Pending retries (persisted) ───
 
-const RETRY_FILE = path.join(__dirname, '..', 'webhook-retries.json');
+const RETRY_FILE = process.env.KASPI_RETRY_FILE || path.join(__dirname, '..', 'webhook-retries.json');
 let pendingRetries = [];
 
 const saveRetries = () => {
@@ -119,24 +120,30 @@ export const trackPayment = (paymentId, type, sessionHeaders, meta = {}) => {
   logger.info('POLLING', `Tracking ${type} payment ${paymentId}`);
 };
 
+// ─── Session of a tracked payment ───
+// sessionHeaders.deviceIdentity — зашифрованная личность кассира (как пришла в
+// x-device-identity); её нет у платежей старых сессий — тогда общая личность.
+// Бросает, если сессию не расшифровать.
+
+export const sessionFromTracked = (sessionHeaders) => ({
+  tokenSN: sessionHeaders.tokenSN,
+  decryptedSecret: decryptSecret(sessionHeaders.vtokenSecret),
+  profileId: sessionHeaders.profileId,
+  identity: sessionHeaders.deviceIdentity ? openIdentity(sessionHeaders.deviceIdentity) : undefined,
+});
+
 // ─── Fetch status from Kaspi (quiet — no loggedFetch) ───
 
 const fetchStatus = async (entry) => {
   const { paymentId, type, sessionHeaders } = entry;
 
-  let decryptedSecret;
+  let session;
   try {
-    decryptedSecret = decryptSecret(sessionHeaders.vtokenSecret);
+    session = sessionFromTracked(sessionHeaders);
   } catch {
     logger.error('POLLING', `Failed to decrypt session for payment ${paymentId} — session may have expired`);
     return { error: 'session_expired' };
   }
-
-  const session = {
-    tokenSN: sessionHeaders.tokenSN,
-    decryptedSecret,
-    profileId: sessionHeaders.profileId,
-  };
 
   let url;
   if (type === 'qr') {

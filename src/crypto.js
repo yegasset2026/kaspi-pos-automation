@@ -68,6 +68,16 @@ export const completeECDH = (serverX509B64) => {
   return secret;
 };
 
+// Личность кассира (src/identity.js) несёт свой ECDH-ключ — общий файл не трогаем.
+export const completeECDHWithKey = (privateKey, serverX509B64) => {
+  const serverPubKey = crypto.createPublicKey({
+    key: Buffer.from(serverX509B64, 'base64'),
+    format: 'der',
+    type: 'spki',
+  });
+  return crypto.diffieHellman({privateKey, publicKey: serverPubKey});
+};
+
 export const completeECDHWithSaved = (serverX509B64) => {
   if (!fs.existsSync(ECDH_FILE)) throw new Error('No saved ECDH keypair (ecdh-keypair.json missing)');
   const saved = JSON.parse(fs.readFileSync(ECDH_FILE, 'utf8'));
@@ -134,18 +144,18 @@ export const computeTokenSnMac = (tokenSN, secret) => {
 
 // ─── ECDSA signing ───
 
-export const ecSign = (data) => {
+export const ecSign = (data, privateKey = ecKeyPair.privateKey) => {
   const sign = crypto.createSign('SHA256');
   sign.update(data);
   sign.end();
-  return sign.sign(ecKeyPair.privateKey).toString('base64');
+  return sign.sign(privateKey).toString('base64');
 };
 
-export const signDataPayload = (dataB64) => ecSign(dataB64);
+export const signDataPayload = (dataB64, privateKey) => ecSign(dataB64, privateKey);
 
 export const computeXSU = (url) => crypto.createHash('md5').update(url.toLowerCase()).digest('hex');
 
-export const computeXSign = (url, headers, xshList, body) => {
+export const computeXSign = (url, headers, xshList, body, privateKey) => {
   const keys = xshList.split(',');
   const lines = [];
   for (const name of keys) {
@@ -160,5 +170,5 @@ export const computeXSign = (url, headers, xshList, body) => {
     signText += '\n' + body;
   }
   const hash = crypto.createHash('sha256').update(signText, 'utf8').digest();
-  return ecSign(hash);
+  return ecSign(hash, privateKey);
 };

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { KASPI_QRPAY_URL } from '../config.js';
 import { loggedFetch, signedQrPayHeaders } from '../helpers.js';
 import { decryptSecret } from '../crypto.js';
+import { identityFromHeaders } from '../identity.js';
 
 const router = Router();
 
@@ -20,6 +21,11 @@ const requireAuth = (req, res, next) => {
     session.decryptedSecret = decryptSecret(session.vtokenSecret);
   } catch {
     return res.status(401).json({ error: 'Invalid or expired vtokenSecret. Re-authenticate.' });
+  }
+  try {
+    session.identity = identityFromHeaders(req);
+  } catch {
+    return res.status(401).json({ error: 'Invalid X-Device-Identity header. Re-authenticate.' });
   }
   req.session = session;
   next();

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { KASPI_QRPAY_URL } from '../config.js';
 import { loggedFetch, signedQrPayHeaders } from '../helpers.js';
 import { decryptSecret } from '../crypto.js';
+import { identityFromHeaders } from '../identity.js';
 
 const router = Router();
 
@@ -26,6 +27,11 @@ router.get('/check', async (req, res) => {
     session.decryptedSecret = decryptSecret(session.vtokenSecret);
   } catch {
     return res.status(401).json({ active: false, error: 'Invalid or expired vtokenSecret. Re-authenticate.' });
+  }
+  try {
+    session.identity = identityFromHeaders(req);
+  } catch {
+    return res.status(401).json({ active: false, error: 'Invalid X-Device-Identity header. Re-authenticate.' });
   }
 
   // 3. Ping Kaspi API to verify the token is still accepted

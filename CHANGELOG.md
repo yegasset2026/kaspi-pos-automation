@@ -19,6 +19,12 @@
 
 ### Наши правки
 
+- `src/identity.js` — личность устройства на кассира (2026-09-25): `POST /api/auth/init { newIdentity: true }` создаёт
+  свои deviceId/installId/pinHash/ECDSA/ECDH, `verify-otp` возвращает `deviceIdentity` (шифр `TOKEN_SECRET_KEY`), все
+  маршруты кассы и поллинг подписывают личностью из `X-Device-Identity`; без заголовка — общая из файлов. `computeXSign`,
+  `ecSign`, `entranceCookie` принимают ключ/устройство необязательным аргументом (апстрим-совместимо). Пути
+  `tracked-payments.json`/`webhook-retries.json` переопределяются `KASPI_TRACKED_FILE`/`KASPI_RETRY_FILE` (для тестов).
+  Тест: `test/identity.test.js`.
 - `src/config.js` — версия приложения `26.0921`, сборка `1114` (2026-09-25): Kaspi перешёл на нумерацию
   год.ММДД и отсёк `4.112.1` ответом «Обновите приложение, чтобы войти». Сборки идут по порядку (минимум 1110 на 25.09); подбор: `POST /api/auth/init`
   с новыми `APP_VERSION`/`APP_BUILD` в env до ответа `sn: EnterPhoneNumber`.

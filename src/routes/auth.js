@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { DEVICE, APP, UA_NATIVE, ENTRANCE_HEADERS_BASE, KASPI_ENTRANCE_URL, KASPI_MTOKEN_URL } from '../config.js';
+import { APP, UA_NATIVE, ENTRANCE_HEADERS_BASE, KASPI_ENTRANCE_URL, KASPI_MTOKEN_URL } from '../config.js';
 import { createEmptySession, applyOrgContext } from '../session.js';
 import {
   generateECDH,
   completeECDH,
+  completeECDHWithKey,
   computeTokenSnMac,
   signDataPayload,
   computeXSU,
@@ -11,6 +12,7 @@ import {
   encryptSecret,
 } from '../crypto.js';
 import { loggedFetch, extractUserToken, entranceCookie, generateUUID, nowISO } from '../helpers.js';
+import { GLOBAL_IDENTITY, generateIdentity, sealIdentity } from '../identity.js';
 
 const router = Router();
 
@@ -23,6 +25,9 @@ const authSessions = new Map();
 
 router.post('/init', async (req, res) => {
   const session = createEmptySession();
+  // { newIdentity: true } — вход выглядит для Kaspi новым телефоном (src/identity.js).
+  const DEVICE = req.body?.newIdentity ? generateIdentity() : GLOBAL_IDENTITY;
+  session.identity = DEVICE;
 
   try {
     const resp = await loggedFetch(`${KASPI_ENTRANCE_URL}/api/v1/entrance/step`, {
@@ -30,7 +35,7 @@ router.post('/init', async (req, res) => {
       headers: {
         ...ENTRANCE_HEADERS_BASE,
         Referer: `${KASPI_ENTRANCE_URL}/process/entrance/?auth=2&appBuild=${APP.build}&appVersion=${APP.version}&platformVersion=${APP.platformVer}&platformType=IOS&deviceBrand=${APP.brand}&deviceModel=${APP.model}&deviceId=${DEVICE.deviceId}&installId=${DEVICE.installId}&frontCameraAvailable=true&sf=registration&pc=KPEntrance&noPass=0`,
-        Cookie: entranceCookie(),
+        Cookie: entranceCookie(null, DEVICE),
       },
       body: JSON.stringify({
         data: {},
@@ -62,7 +67,13 @@ router.post('/init', async (req, res) => {
       authSessions.set(session.processId, session);
     }
 
-    res.json({ success: !!session.processId, processId: session.processId, view: body.view?.code, body });
+    res.json({
+      success: !!session.processId,
+      processId: session.processId,
+      newIdentity: !!DEVICE.stored,
+      view: body.view?.code,
+      body,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -88,7 +99,7 @@ router.post('/send-phone', async (req, res) => {
       headers: {
         ...ENTRANCE_HEADERS_BASE,
         Referer: `${KASPI_ENTRANCE_URL}/process/universal-enter-phone-number?pId=${session.processId}&firstPage=KPUniversalEnterPhoneNumber`,
-        Cookie: entranceCookie(session.userToken),
+        Cookie: entranceCookie(session.userToken, session.identity),
       },
       body: JSON.stringify({
         meta: { pId: session.processId, sn: 'EnterPhoneNumber' },
@@ -127,7 +138,7 @@ router.post('/verify-otp', async (req, res) => {
       headers: {
         ...ENTRANCE_HEADERS_BASE,
         Referer: `${KASPI_ENTRANCE_URL}/process/universal-enter-phone-number?pId=${session.processId}&firstPage=KPUniversalEnterPhoneNumber`,
-        Cookie: entranceCookie(session.userToken),
+        Cookie: entranceCookie(session.userToken, session.identity),
       },
       body: JSON.stringify({
         meta: { pId: session.processId, sn: 'ViewEnterOtp' },
@@ -166,8 +177,9 @@ router.post('/verify-otp', async (req, res) => {
 // ═══════════════════════════════════════════════════
 
 async function doFinish(session) {
-  const ecdhX509 = generateECDH();
-  console.log('Generated ECDH public key for guard.x509:', ecdhX509);
+  const DEVICE = session.identity || GLOBAL_IDENTITY;
+  const ecdhX509 = DEVICE.ecdhX509 || generateECDH();
+  console.log('ECDH public key for guard.x509 ready');
 
   const signedDataObj = {
     installId: DEVICE.installId,
@@ -198,11 +210,11 @@ async function doFinish(session) {
     'X-SH': 'url,X-Time-Zone,X-Request-ID,X-Net-Type,X-Emulator,X-Call,X-Platform-Type,X-Locale,X-Time,X-SV',
   };
   const finishBody = JSON.stringify({
-    signed: { sign: signDataPayload(signedDataB64), data: signedDataB64 },
+    signed: { sign: signDataPayload(signedDataB64, DEVICE.ecPrivateKey), data: signedDataB64 },
     guard: { pinHash: DEVICE.pinHash, x509: ecdhX509 },
     processId: session.processId,
   });
-  finishHeaders['X-Sign'] = computeXSign(finishUrl, finishHeaders, finishHeaders['X-SH'], finishBody);
+  finishHeaders['X-Sign'] = computeXSign(finishUrl, finishHeaders, finishHeaders['X-SH'], finishBody, DEVICE.ecPrivateKey);
 
   const resp = await loggedFetch(finishUrl, {
     method: 'POST',
@@ -219,7 +231,9 @@ async function doFinish(session) {
     let rawSecret = null;
     if (body.data.x509) {
       try {
-        rawSecret = completeECDH(body.data.x509);
+        rawSecret = DEVICE.ecdhPrivateKey
+          ? completeECDHWithKey(DEVICE.ecdhPrivateKey, body.data.x509)
+          : completeECDH(body.data.x509);
         vtokenSecret = encryptSecret(rawSecret);
         console.log('vtoken activated successfully');
       } catch (e) {
@@ -246,7 +260,7 @@ async function doFinish(session) {
       'X-Time': nowISO(),
       'X-S': 'R:0|E:0|RH:0|N:0',
       'X-SV': '2',
-      'X-Kb-Client-Ip': '192.168.1.96',
+      'X-Kb-Client-Ip': DEVICE.clientIp,
       'X-PkTag': DEVICE.pkTag,
       'X-SU': computeXSU(orgUrl),
       'X-SH':
@@ -274,7 +288,7 @@ async function doFinish(session) {
       },
       OrganizationId: 0,
     });
-    orgHeaders['X-Sign'] = computeXSign(orgUrl, orgHeaders, orgHeaders['X-SH'], orgPayload);
+    orgHeaders['X-Sign'] = computeXSign(orgUrl, orgHeaders, orgHeaders['X-SH'], orgPayload, DEVICE.ecPrivateKey);
 
     const orgResp = await loggedFetch(orgUrl, {
       method: 'POST',
@@ -296,6 +310,8 @@ async function doFinish(session) {
       orgName: session.orgName,
       phone: session.phoneNumber,
       organizations: orgBody.Data?.Organizations,
+      // Своя личность — вызывающий хранит её и шлёт в x-device-identity; общая — null.
+      deviceIdentity: DEVICE.stored ? sealIdentity(DEVICE) : null,
     };
   } else {
     throw new Error('Finish failed: ' + JSON.stringify(body));
