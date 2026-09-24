@@ -82,10 +82,10 @@ export const KASPI_QRPAY_URL = 'https://qrpay.kaspi.kz';
 
 export const APP = {
   // Kaspi отсекает старые версии («Обновите приложение, чтобы войти»): при таком ответе
-  // смотреть текущую версию (itunes lookup id=1262997215) и подбирать сборку ГГММДДн.
-  // 26.0921/2609210 проверено 2026-09-25; апстрим 28c9167 сидел на 4.112.1/1107.
+  // смотреть текущую версию (itunes lookup id=1262997215) ; сборки идут по порядку (1107 = 4.112.1, минимум 1110 на 25.09.2026), подбирать через /api/auth/init.
+  // 26.0921/1114 выставлено 2026-09-25 (2609210 проходил entrance, но finish отвечал «Превышено время ожидания»); апстрим 28c9167 сидел на 4.112.1/1107.
   version: process.env.APP_VERSION || '26.0921',
-  build: process.env.APP_BUILD || '2609210',
+  build: process.env.APP_BUILD || '1114',
   platform: process.env.APP_PLATFORM || 'iOS',
   platformVer: process.env.APP_PLATFORM_VER || '18.4',
   locale: process.env.APP_LOCALE || 'ru-RU',
